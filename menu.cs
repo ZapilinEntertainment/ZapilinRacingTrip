@@ -19,6 +19,7 @@ public class menu : MonoBehaviour {
 		port_textfield_rect=new Rect(sw/2-2*k,sh/2,4*k,k);
 		host_button_rect=new Rect(sw/2-2*k,sh/2+k,2*k,k);
 		connect_button_rect=new Rect(sw/2,sh/2+k,2*k,k);
+		if (nm==null) nm=GameObject.Find("networkManager").GetComponent<NetworkManager>();
 	}
 
 	void OnGUI () 
@@ -27,6 +28,7 @@ public class menu : MonoBehaviour {
 		port_s=GUI.TextField(port_textfield_rect,port_s);
 		if (GUI.Button(host_button_rect,"Host")) 
 		{
+			if (nm==null) nm=GameObject.Find("networkManager").GetComponent<NetworkManager>();
 			nm.onlineScene="scene0";
 			nm.networkAddress=ip_string;
 			int a=4444;
@@ -35,10 +37,10 @@ public class menu : MonoBehaviour {
 				nm.networkPort=a;
 				nm.StartHost();	
 			}
-			Destroy(gameObject);
 		}
 		if (GUI.Button(connect_button_rect,"Connect"))
 		{
+			if (nm==null) nm=GameObject.Find("networkManager").GetComponent<NetworkManager>();
 			nm.onlineScene="scene0";
 			nm.networkAddress=ip_string;
 			int a=4444;
@@ -47,7 +49,6 @@ public class menu : MonoBehaviour {
 				nm.networkPort=a;
 				nm.StartClient();	
 			}
-			Destroy(gameObject);
 		}
 	}
 }
