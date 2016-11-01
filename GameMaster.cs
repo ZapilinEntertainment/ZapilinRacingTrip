@@ -2,20 +2,24 @@
 using System.Collections;
 using UnityEngine.Networking;
 using System.Collections.Generic;
+using UnityEngine.SceneManagement;
 
 public class GameMaster : NetworkBehaviour {
 	const int MAX_PLAYERS=16;
 
 	public GameObject[] waypoints;
+	public GameObject compass;
 	public int player_map_position=0;
+	public int local_player_number=-1;
 	int players_count;
 	int k;
 	float start_time;
 	int[] players_positions;
 	List<int> finished;
 	public List<float> results;
-	bool[] ready;
-	bool race_started=false;
+	public bool[] ready;
+	public bool race_started=false;
+	bool this_player_finished=false;
 
 	Texture blackboard_tx;
 	Texture ind_on;
@@ -23,6 +27,8 @@ public class GameMaster : NetworkBehaviour {
 	Rect board_rect;
 	Rect player_info_rect;
 	Rect player_indicator_rect;
+	public AudioClip button_sound;
+	public NetworkManager nm;
 
 	const int laps_count=3;
 	int lap=0;
@@ -33,9 +39,11 @@ public class GameMaster : NetworkBehaviour {
 		for (byte i=0;i<MAX_PLAYERS;i++) ready[i]=false;
 		Global.gmaster=this;
 		if (isServer) Global.onServer=true;
+		nm=GameObject.Find("networkManager").GetComponent<NetworkManager>();
 	}
 
 	void Start () {
+		button_sound=Resources.Load<AudioClip>("button_sound");
 		blackboard_tx=Resources.Load<Texture>("blackboard_tx");
 		ind_on=Resources.Load<Texture>("indicator_on");
 		ind_off=Resources.Load<Texture>("indicator_off");
@@ -51,6 +59,39 @@ public class GameMaster : NetworkBehaviour {
 		}
 	}
 
+	void Update () 
+	{
+		if (!Global.playable) return;
+		if (compass&&!this_player_finished) 
+		{
+			compass.transform.LookAt(waypoints[player_map_position].transform.position);
+		}
+	}
+
+	public void MakeDisconnect() 
+	{
+		nm=GameObject.Find("networkManager").GetComponent<NetworkManager>();
+		if (nm==null) Application.Quit();
+		else
+		{
+			if (isServer) nm.StopHost();
+			else nm.StopClient();
+			SceneManager.LoadScene(0);
+			Destroy(this);
+		}
+	}
+
+	public void MakeReady(int x) 
+	{
+		ready[x]=true;
+		string s="";
+		foreach (bool b in ready) 
+		{
+			if (b) s+='1'; else s+='0';
+		}
+		RpcReadySignal(s);
+	}
+
 	public void Next() 
 	{
 		player_map_position++;
@@ -60,8 +101,11 @@ public class GameMaster : NetworkBehaviour {
 			lap++;
 			if (lap==laps_count) 
 			{
-				CmdAddToFinished(Global.local_player_number);
+				CmdAddToFinished(Global.gmaster.local_player_number);
 				Global.myPlayer.SendMessage("Finish",SendMessageOptions.DontRequireReceiver);
+				this_player_finished=true;
+				foreach (GameObject g in waypoints) g.SetActive(false);
+				return;
 			}
 		}
 		for (int i=0;i<waypoints.Length;i++)
@@ -74,7 +118,8 @@ public class GameMaster : NetworkBehaviour {
 	{
 		if (!isServer) return (-1);
 		players_count++;
-		RpcIncreasePlayersCount();
+		if (players_count>1) Global.multiplayer=true;
+		RpcSetPlayersCount(players_count);
 		return (players_count-1);
 	}
 
@@ -93,34 +138,37 @@ public class GameMaster : NetworkBehaviour {
 		finished.Add(x);
 		results.Add(t);
 	}
-
-	[Command]
-	void CmdReadySignal (int x) 
-	{
-		ready[x]=true;
-		RpcReadySignal(x);
-	}
+		
 	[ClientRpc]
-	void RpcReadySignal (int x)
+	void RpcReadySignal (string status)
 	{
 		if (isServer) return;
-		ready[x]=true;
+		for (int i=0;i<status.Length;i++)
+		{
+			if (status[i]=='1') ready[i]=true; else ready[i]=false;
+		}
 	}
 
 
 	[ClientRpc]
-	void RpcIncreasePlayersCount()
+	void RpcSetPlayersCount( int x)
 	{
 		if (isServer) return;
-		players_count++;
+		players_count = x;
+		if (players_count>1) Global.multiplayer=true;
 	}
-
-	[Command]
-	void CmdRaceStart()
+		
+	void RaceStart()
 	{
+		if (!isServer) return;
 		Global.playable=true;
 		race_started=true;
 		start_time=Time.time;
+		GameObject[] players=GameObject.FindGameObjectsWithTag("Player");
+		foreach (GameObject g in players) 
+		{
+			g.SendMessage("StartRace",SendMessageOptions.DontRequireReceiver);
+		}
 		RpcRaceStart();
 	}
 	[ClientRpc]
@@ -131,9 +179,11 @@ public class GameMaster : NetworkBehaviour {
 		Global.playable=true;
 		race_started=true;
 	}
+		
 
 	void OnGUI () 
 	{
+		GUILayout.Label(local_player_number.ToString());
 		k=Global.gui_piece;
 		if (!race_started) 
 		{
@@ -148,18 +198,12 @@ public class GameMaster : NetworkBehaviour {
 				else GUI.DrawTexture(r2,ind_off);
 				r2.y+=k;
 			}
-			if (!ready[Global.local_player_number]) 
-			{
-				if (GUI.Button(r1,"Ready!")) CmdReadySignal(Global.local_player_number);
-			}
-			else 
-			{
-				if (isServer) 
+				if (isServer&&ready[local_player_number]) 
 				{
-					if (GUI.Button(r1,"StartGame!")) CmdRaceStart();
+					if (GUI.Button(r1,"StartGame!")) RaceStart();
 				}
-			}
 		}
+
 	}
 		
 }

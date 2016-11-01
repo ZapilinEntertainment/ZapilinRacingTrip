@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 using UnityEngine.SceneManagement;
+using UnityEngine.Networking;
 
 public class ServiceMenu : MonoBehaviour {
 	Rect exit_button_rect;
@@ -12,6 +13,9 @@ public class ServiceMenu : MonoBehaviour {
 	
 	void OnGUI () 
 	{
-		if (GUI.Button(exit_button_rect,"Exit")) {SceneManager.LoadScene(0);}
+		if (GUI.Button(exit_button_rect,"Exit")) 
+		{
+			Global.gmaster.MakeDisconnect();
+		}
 	}
 }

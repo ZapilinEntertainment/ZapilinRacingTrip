@@ -9,6 +9,7 @@ public class playerController : NetworkBehaviour {
 	public float angle_acceleration=6;
 	public  float maxspeed=50;
 	public float propeller_sound_volume=0;
+	public int hp=100;
 
 	public bool accelerating=false;
 
@@ -27,16 +28,18 @@ public class playerController : NetworkBehaviour {
 	public Vector3 xrotate_vector;
 	public Vector3 yrotate_vector;
 	public Vector3 zrotate_vector;
-	[SyncVar] Vector3 realpos;
-	[SyncVar] Quaternion realrot;
-	public int myNumber=0;
+	public Vector3 realpos;
+	Quaternion realrot;
+	float last_sync_time;
+	Vector3 last_forward;
+	[SyncVar] public int myNumber=-1;
 
 	public AudioSource propeller_as;
 	public AudioSource byke_as;
 
-	public bool multiplayer=true;
 	public bool last_pedal_left=false;
 	public bool stopping=false;
+	bool painted=false;
 	float time_to_stop=0;
 	float byke_sound_time=0;
 
@@ -48,11 +51,17 @@ public class playerController : NetworkBehaviour {
 			c.transform.parent=transform;
 			c.transform.localPosition=new Vector3(0,-10,0);
 			c.transform.localRotation=Quaternion.Euler(Vector3.zero);
+			Global.effects_as=c.AddComponent<AudioSource>();
 			playerControllerGUI pcg=gameObject.AddComponent<playerControllerGUI>();
 			pcg.cam=c;
 			head.SetActive(false);
 			pcg.pc=this;
-			Global.myPlayer=c;
+			Global.myPlayer=gameObject;
+			c=Instantiate(Resources.Load<GameObject>("compass")) as GameObject;
+			c.transform.parent=transform;
+			c.transform.localRotation=Quaternion.Euler(Vector3.zero);
+			c.transform.localPosition=new Vector3(0,-11,1.5f);
+			Global.gmaster.compass=c;
 			pcg.cloud_emitter=Instantiate(Resources.Load<GameObject>("cloud_emitter"));
 			CmdRequestAssignment();
 	}
@@ -103,7 +112,6 @@ public class playerController : NetworkBehaviour {
 		}
 		if (speed!=0) 
 		{
-		transform.Translate(Vector3.forward*Time.deltaTime*speed,Space.Self);
 			if (yrotate_vector!=Vector3.zero) 
 			{
 				transform.Rotate(yrotate_vector*Time.deltaTime*angle_acceleration,Space.Self);
@@ -125,25 +133,42 @@ public class playerController : NetworkBehaviour {
 		flipper.transform.localRotation=Quaternion.Euler(15*xrotate_vector.x,0,0);
 		if (!isServer)
 		{
+			if (1>2) {
+			Vector3 rpos=realpos;
+			Vector3 correction_vector=last_forward;
+			float y=yrotate_vector.y*angle_acceleration*(Time.time-last_sync_time);
+			correction_vector.x=correction_vector.x*Mathf.Cos(y)-correction_vector.z*Mathf.Sin(y);
+			correction_vector.z=correction_vector.x*Mathf.Sin(y)+correction_vector.z*Mathf.Cos(y);
+			rpos=correction_vector.normalized*speed*(Time.time-last_sync_time);
+
 			float a=Vector3.Distance(transform.position,realpos);
-			if (a>1) 
+			if (a>=speed*Time.deltaTime) 
 			{
-				transform.position+=(realpos-transform.position).normalized*Time.deltaTime;
+				if (a>1000) transform.position=realpos+rpos;
+				else	
+				{
+					transform.Translate((transform.forward*Time.deltaTime*speed+rpos)/2);
+				}
 			}
 			a=Quaternion.Angle(transform.rotation,realrot);
-			if (a>1) 
+			if (a>=angle_acceleration*Time.deltaTime) 
 			{
 				transform.rotation=Quaternion.RotateTowards(transform.rotation,realrot,Time.deltaTime);
 			}
+			}
+			else transform.Translate(Vector3.forward*Time.deltaTime*speed,Space.Self);
 		}
 		else
 		{
-			realpos=transform.position;
-			realrot=transform.rotation;
+			transform.Translate(Vector3.forward*Time.deltaTime*speed,Space.Self);
 		}
 		if (!isLocalPlayer) 
 		{
-			head.transform.rotation=Quaternion.Euler(head_look_vector);
+			if (head_look_vector!=Vector3.zero) head.transform.rotation=Quaternion.LookRotation(head_look_vector);
+			if (!painted) 
+			{
+				if (myNumber!=-1) PaintMe(myNumber);
+			}
 		}
 	}
 
@@ -152,7 +177,7 @@ public class playerController : NetworkBehaviour {
 	{
 		if (colored_parts.Length==0) return;
 			Color myColor;
-			switch (myNumber) 
+			switch (x) 
 			{
 			case 0:myColor=Color.red;break;
 			case 1: myColor=Color.green;break;
@@ -164,26 +189,52 @@ public class playerController : NetworkBehaviour {
 			default: myColor=Color.gray;break;	
 			}
 			foreach (Renderer r in colored_parts) r.material.color=myColor;
+		painted=true;
 	}
+
+	public void StartRace() 
+	{
+		if (isServer) return;
+		StartCoroutine(SyncCor());
+	}
+	IEnumerator SyncCor () 
+	{
+		yield return new WaitForSeconds(1);
+		RpcSyncPos(transform.position,transform.rotation);
+		StartCoroutine(SyncCor());
+	}
+
+	[ClientRpc]
+	void RpcSyncPos (Vector3 pos,Quaternion rot) 
+	{
+		realpos=pos;
+		realrot=rot;
+		last_sync_time=Time.time;
+		last_forward=transform.forward;
+	}
+
+
 
 	[Command]
 	void CmdRequestAssignment() 
 	{
-		int x=Global.gmaster.GetNumber();
-		gameObject.name="player"+x.ToString();
-		Global.local_player_number=x;
-		transform.position=new Vector3(-200+x*100,0,-100*(x/4));
+		myNumber=Global.gmaster.GetNumber();
+		gameObject.name="player"+myNumber.ToString();
+		if (isLocalPlayer) Global.gmaster.local_player_number=myNumber;
+		transform.position=new Vector3(-200+myNumber*100,0,-100*(myNumber/4));
+		realpos=transform.position;
+		StartCoroutine(SyncCor());
 		c1.enabled=true;
 		c2.enabled=true;
-		RpcSetMyNumber(x);
-		if (multiplayer) PaintMe(x);
+		RpcSetMyNumber(myNumber);
+		if (Global.multiplayer) PaintMe(myNumber);
 	}
 	[ClientRpc]
 	void RpcSetMyNumber (int x) 
 	{
 		if (isServer) return;
 		myNumber=x;
-		Global.local_player_number=x;
+		if (isLocalPlayer) Global.gmaster.local_player_number=x;
 		transform.position=new Vector3(-200+x*100,0,-100*(x/4));
 		c1.enabled=true;
 		c2.enabled=true;
@@ -194,6 +245,7 @@ public class playerController : NetworkBehaviour {
 	[Command]
 	public void CmdAccelerate (bool left) 
 	{
+		if (speed>=maxspeed) return;
 		if (accelerating) 
 		{
 			if (left!=last_pedal_left)
@@ -208,6 +260,7 @@ public class playerController : NetworkBehaviour {
 				accelerating=false;
 				time_to_stop=0;
 				propeller_sound_volume=0;
+				RpcPropellerSound(false);
 				byke_sound_time=0.3f;
 				byke_as.Play();
 			}
@@ -216,6 +269,7 @@ public class playerController : NetworkBehaviour {
 		else //start moving
 		{
 			propeller_sound_volume=1;
+			RpcPropellerSound(true);
 			last_pedal_left=left;
 			accelerating=true;
 			speed+=acceleration*Time.deltaTime;
@@ -224,13 +278,18 @@ public class playerController : NetworkBehaviour {
 			byke_as.Play();
 		}
 	}
+	[ClientRpc]
+	void RpcPropellerSound(bool x) 
+	{
+		if (x) propeller_sound_volume=1; else propeller_sound_volume=0;
+	}
 
 
 	[Command]
 	public void CmdHeadRotation (Vector3 rt) 
 	{
 		head_look_vector=rt;
-		if (multiplayer) RpcHeadRotation(rt);
+		if (Global.multiplayer) RpcHeadRotation(rt);
 	}
 	[ClientRpc]
 	public void RpcHeadRotation (Vector3 rt)
@@ -248,7 +307,7 @@ public class playerController : NetworkBehaviour {
 		case 1: xrotate_vector=Vector3.left;break;
 		case 2: xrotate_vector=Vector3.right;break;
 		}
-		if (multiplayer )RpcXRotateVector(x);
+		if (Global.multiplayer )RpcXRotateVector(x);
 	}
 	[ClientRpc]
 	void RpcXRotateVector (byte x)
@@ -270,7 +329,7 @@ public class playerController : NetworkBehaviour {
 		case 1: yrotate_vector=Vector3.up;break;
 		case 2: yrotate_vector=Vector3.down;break;
 		}
-		if (multiplayer ) RpcYRotateVector(x);
+		if (Global.multiplayer ) RpcYRotateVector(x);
 	}
 	[ClientRpc]
 	void RpcYRotateVector (byte x)
@@ -289,10 +348,10 @@ public class playerController : NetworkBehaviour {
 		switch (x) 
 		{
 		case 0: zrotate_vector=Vector3.zero;break;
-		case 1: zrotate_vector=Vector3.forward;break;
-		case 2: zrotate_vector=Vector3.back;break;
+		case 1: zrotate_vector=Vector3.back;break;
+		case 2: zrotate_vector=Vector3.forward;break;
 		}
-		if (multiplayer ) RpcYRotateVector(x);
+		if (Global.multiplayer ) RpcYRotateVector(x);
 	}
 
 	[ClientRpc]
@@ -302,8 +361,8 @@ public class playerController : NetworkBehaviour {
 		switch (x) 
 		{
 		case 0: zrotate_vector=Vector3.zero;break;
-		case 1: zrotate_vector=Vector3.forward;break;
-		case 2: zrotate_vector=Vector3.back;break;
+		case 1: zrotate_vector=Vector3.back;break;
+		case 2: zrotate_vector=Vector3.forward;break;
 		}
 	}
 
@@ -327,6 +386,12 @@ public class playerController : NetworkBehaviour {
 			pcg.result=x;
 			}
 		}
+	}
+
+	[Command]
+	public void CmdReadySignal (int x) 
+	{
+		Global.gmaster.MakeReady(x);
 	}
 
 	public void Finish (int x) {

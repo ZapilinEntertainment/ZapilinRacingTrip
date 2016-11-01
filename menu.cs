@@ -5,11 +5,12 @@ using UnityEngine.SceneManagement;
 
 
 public class menu : MonoBehaviour {
+	public Texture background_tx;
 	public NetworkManager nm;
 	public string ip_string="127.0.0.1";
 	string port_s="4444";
 	public int port=4444;
-	Rect ip_textfield_rect,port_textfield_rect,host_button_rect,connect_button_rect;
+	Rect ip_textfield_rect,port_textfield_rect,host_button_rect,connect_button_rect,exit_button_rect,background_rect;
 
 	void Start () 
 	{
@@ -19,11 +20,14 @@ public class menu : MonoBehaviour {
 		port_textfield_rect=new Rect(sw/2-2*k,sh/2,4*k,k);
 		host_button_rect=new Rect(sw/2-2*k,sh/2+k,2*k,k);
 		connect_button_rect=new Rect(sw/2,sh/2+k,2*k,k);
+		exit_button_rect=new Rect(sw-2*k,0,2*k,k);
+		background_rect=new Rect(0,0,sw,sh);
 		if (nm==null) nm=GameObject.Find("networkManager").GetComponent<NetworkManager>();
 	}
 
 	void OnGUI () 
 	{
+		GUI.DrawTexture(background_rect,background_tx,ScaleMode.ScaleAndCrop);
 		ip_string=GUI.TextField(ip_textfield_rect,ip_string);
 		port_s=GUI.TextField(port_textfield_rect,port_s);
 		if (GUI.Button(host_button_rect,"Host")) 
@@ -50,5 +54,6 @@ public class menu : MonoBehaviour {
 				nm.StartClient();	
 			}
 		}
+		if (GUI.Button(exit_button_rect,"Exit")) {Application.Quit();}
 	}
 }
