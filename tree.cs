@@ -21,10 +21,10 @@ public class tree : MonoBehaviour {
 	}
 
 	void Update () {
-		if (!Global.myPlayer) return;
+		if (2>1) return;
 		float d=Vector3.Distance(Global.myPlayer.transform.position,transform.position);
-		if (d>1500) {
-			if (d>4000) {
+		if (d>4000) {
+			if (d>6000) {
 				if (!invisible) {invisible=true;mesh.gameObject.SetActive(false);sprite.SetActive(false);}
 			}
 			else {

@@ -9,6 +9,7 @@ public class GameMaster : NetworkBehaviour {
 
 	public GameObject[] waypoints;
 	public GameObject compass;
+	public Vector3 start_pos=new Vector3(0,0,-1500);
 	public int player_map_position=0;
 	public int local_player_number=-1;
 	int players_count;
@@ -28,6 +29,7 @@ public class GameMaster : NetworkBehaviour {
 	Rect player_info_rect;
 	Rect player_indicator_rect;
 	public AudioClip button_sound;
+	public AudioClip[] ambient;
 	public NetworkManager nm;
 
 	const int laps_count=3;
@@ -62,7 +64,7 @@ public class GameMaster : NetworkBehaviour {
 	void Update () 
 	{
 		if (!Global.playable) return;
-		if (compass&&!this_player_finished) 
+		if (compass&&!this_player_finished&&waypoints.Length>0) 
 		{
 			compass.transform.LookAt(waypoints[player_map_position].transform.position);
 		}
@@ -76,6 +78,7 @@ public class GameMaster : NetworkBehaviour {
 		{
 			if (isServer) nm.StopHost();
 			else nm.StopClient();
+			StopAllCoroutines();
 			SceneManager.LoadScene(0);
 			Destroy(this);
 		}
@@ -198,10 +201,15 @@ public class GameMaster : NetworkBehaviour {
 				else GUI.DrawTexture(r2,ind_off);
 				r2.y+=k;
 			}
-				if (isServer&&ready[local_player_number]) 
+				if (isServer) 
 				{
-					if (GUI.Button(r1,"StartGame!")) RaceStart();
+					if (ready[local_player_number]) {if (GUI.Button(r1,"StartGame!")) RaceStart();}
+					//if (GUI.Button(new Rect(0,2*k,2*k,k),"AddBot"))
+					//{
+					//	Network.Instantiate(nm.playerPrefab,Vector3.zero,Quaternion.identity,0);
+					//}
 				}
+				
 		}
 
 	}

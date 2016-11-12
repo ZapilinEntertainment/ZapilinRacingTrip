@@ -10,7 +10,10 @@ public static class Global {
 	public static bool multiplayer=true;
 
 	public static GameObject myPlayer;
+
 	public static GameMaster gmaster;
+	public static ServiceMenu service_menu;
+
 	public static Material red_material;
 	public static AudioSource effects_as;
 }

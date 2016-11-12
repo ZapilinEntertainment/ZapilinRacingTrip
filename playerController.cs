@@ -6,6 +6,8 @@ public class playerController : NetworkBehaviour {
 	[SyncVar]
 	public float speed=0;
 	public float acceleration=3;
+	public float speed_bonus=1;
+	public float bonus_time=0;
 	public float angle_acceleration=6;
 	public  float maxspeed=50;
 	public float propeller_sound_volume=0;
@@ -19,6 +21,7 @@ public class playerController : NetworkBehaviour {
 	public GameObject flipper; //боковые плавники
 	public GameObject screw; //винт
 	public GameObject pedals;
+	public GameObject scene_center;
 
 	public Renderer[] colored_parts;
 	public Collider c1;
@@ -35,17 +38,21 @@ public class playerController : NetworkBehaviour {
 	[SyncVar] public int myNumber=-1;
 
 	public AudioSource propeller_as;
+	AudioClip near_propeller_clip;
+	AudioClip far_propeller_clip;
 	public AudioSource byke_as;
 
-	public bool last_pedal_left=false;
 	public bool stopping=false;
+	public bool start_with_autopilot=false;
 	bool painted=false;
-	float time_to_stop=0;
+	bool propeller_far=false;
 	float byke_sound_time=0;
 
 	void Start () 
 	{
-		if (isLocalPlayer) 
+		far_propeller_clip=Resources.Load<AudioClip>("propeller_far_clip");
+		near_propeller_clip=Resources.Load<AudioClip>("propeller_near_clip");
+		if (isLocalPlayer&&!start_with_autopilot) 
 		{
 			GameObject c=Instantiate(camera_pref) as GameObject;
 			c.transform.parent=transform;
@@ -65,17 +72,43 @@ public class playerController : NetworkBehaviour {
 			pcg.cloud_emitter=Instantiate(Resources.Load<GameObject>("cloud_emitter"));
 			CmdRequestAssignment();
 	}
+		if (isServer) 
+		{
+			scene_center=GameObject.Find("scene_center");
+			if (start_with_autopilot) 
+			{
+				Autopilot ap=gameObject.AddComponent<Autopilot>();
+				ap.pc=this;
+				AutoAssignment();
+			}
+		}
 	}
 
 	void Update () 
 	{
-		if (time_to_stop>0)
+		if (bonus_time>0) 
 		{
-			time_to_stop-=Time.deltaTime;
-			if (time_to_stop<=0) 
+			bonus_time-=Time.deltaTime;
+			if (bonus_time<=0) 
 			{
-				time_to_stop=0;
-				accelerating=false;
+				bonus_time=0;
+				speed_bonus=1;
+			}
+		}
+		if (accelerating) 
+		{
+			if (speed+acceleration*Time.deltaTime<=maxspeed) 
+			{
+				speed+=acceleration*Time.deltaTime;
+			}
+			else accelerating=false;
+		}
+		else
+		{
+			if (stopping) 
+			{
+				if (speed-acceleration*Time.deltaTime>=0) speed-=acceleration/2*Time.deltaTime;
+				else {stopping=false;}
 			}
 		}
 		if (byke_sound_time>0) 
@@ -87,6 +120,8 @@ public class playerController : NetworkBehaviour {
 			}
 			byke_as.volume=byke_sound_time;
 		}
+
+		propeller_sound_volume=speed/maxspeed;
 
 		if (propeller_sound_volume!=propeller_as.volume) 
 		{
@@ -102,14 +137,7 @@ public class playerController : NetworkBehaviour {
 			}
 		}
 
-		if (stopping) 
-		{
-			if (speed>0) 
-			{
-				speed-=acceleration*Time.deltaTime*3;
-				if (speed<0) speed=0;
-			}
-		}
+
 		if (speed!=0) 
 		{
 			if (yrotate_vector!=Vector3.zero) 
@@ -126,9 +154,7 @@ public class playerController : NetworkBehaviour {
 			}
 			screw.transform.Rotate(Vector3.forward*speed*Time.deltaTime*60,Space.Self);
 		}
-		else {
-			propeller_sound_volume=0;
-		}
+
 		fin.transform.localRotation=Quaternion.Euler(0,-15*yrotate_vector.y,0);
 		flipper.transform.localRotation=Quaternion.Euler(15*xrotate_vector.x,0,0);
 		if (!isServer)
@@ -156,11 +182,20 @@ public class playerController : NetworkBehaviour {
 				transform.rotation=Quaternion.RotateTowards(transform.rotation,realrot,Time.deltaTime);
 			}
 			}
-			else transform.Translate(Vector3.forward*Time.deltaTime*speed,Space.Self);
+			else transform.Translate(Vector3.forward*Time.deltaTime*speed*speed_bonus,Space.Self);
 		}
-		else
+		else //SERVER PART
 		{
-			transform.Translate(Vector3.forward*Time.deltaTime*speed,Space.Self);
+			transform.Translate(Vector3.forward*Time.deltaTime*speed*speed_bonus,Space.Self);
+			if (scene_center) 
+			{
+				if (Vector3.Distance(transform.position,scene_center.transform.position)>Global.service_menu.playing_radius) 
+				{
+					transform.position=(scene_center.transform.position-transform.position)*1.99f;
+					RpcTeleportation(transform.position);
+				}
+			}
+			realpos=transform.position;
 		}
 		if (!isLocalPlayer) 
 		{
@@ -168,6 +203,23 @@ public class playerController : NetworkBehaviour {
 			if (!painted) 
 			{
 				if (myNumber!=-1) PaintMe(myNumber);
+			}
+			float d=Vector3.Distance(transform.position,Global.myPlayer.transform.position);
+			if (d>500) 
+			{
+				if (!propeller_far) 
+				{
+					propeller_as.clip=far_propeller_clip;
+					propeller_far=true;
+				}
+			}
+			else 
+			{
+				if (propeller_far)
+				{
+					propeller_as.clip=near_propeller_clip;
+					propeller_far=false;
+				}
 			}
 		}
 	}
@@ -204,16 +256,53 @@ public class playerController : NetworkBehaviour {
 		StartCoroutine(SyncCor());
 	}
 
+	public void SetBonus (Vector3 b) 
+	{
+		if (!isServer) return;
+		speed_bonus=b.x;
+		bonus_time=b.y;
+		RpcSetBonus(b.x,b.y);
+	}
+	[ClientRpc]
+	void RpcSetBonus (float b, float t) 
+	{
+		if (isServer) return;
+		speed_bonus=b;
+		bonus_time=t;
+	}
+
 	[ClientRpc]
 	void RpcSyncPos (Vector3 pos,Quaternion rot) 
 	{
+		if (isServer) return;
 		realpos=pos;
 		realrot=rot;
 		last_sync_time=Time.time;
 		last_forward=transform.forward;
 	}
+	[ClientRpc]
+	void RpcTeleportation (Vector3 pos) {
+		if (isServer) return;
+		transform.position=pos;
+		realpos=pos;
+		StopCoroutine(SyncCor());
+		StartCoroutine(SyncCor());
+	}
 
 
+	void AutoAssignment () 
+	{
+		if (!isServer) return;
+		myNumber=Global.gmaster.GetNumber();
+		gameObject.name="player"+myNumber.ToString();
+		transform.position=Global.gmaster.start_pos+new Vector3(-200+myNumber*100,0,-100*(myNumber/4));
+		realpos=transform.position;
+		StartCoroutine(SyncCor());
+		c1.enabled=true;
+		c2.enabled=true;
+		RpcSetMyNumber(myNumber);
+		if (Global.multiplayer) PaintMe(myNumber);
+	}
 
 	[Command]
 	void CmdRequestAssignment() 
@@ -221,7 +310,7 @@ public class playerController : NetworkBehaviour {
 		myNumber=Global.gmaster.GetNumber();
 		gameObject.name="player"+myNumber.ToString();
 		if (isLocalPlayer) Global.gmaster.local_player_number=myNumber;
-		transform.position=new Vector3(-200+myNumber*100,0,-100*(myNumber/4));
+		transform.position=Global.gmaster.start_pos+new Vector3(-200+myNumber*100,0,-100*(myNumber/4));
 		realpos=transform.position;
 		StartCoroutine(SyncCor());
 		c1.enabled=true;
@@ -235,7 +324,7 @@ public class playerController : NetworkBehaviour {
 		if (isServer) return;
 		myNumber=x;
 		if (isLocalPlayer) Global.gmaster.local_player_number=x;
-		transform.position=new Vector3(-200+x*100,0,-100*(x/4));
+		transform.position=Global.gmaster.start_pos+new Vector3(-200+x*100,0,-100*(x/4));
 		c1.enabled=true;
 		c2.enabled=true;
 		gameObject.name="player"+x.ToString();
@@ -243,40 +332,39 @@ public class playerController : NetworkBehaviour {
 	}
 
 	[Command]
-	public void CmdAccelerate (bool left) 
+	public void CmdAccelerate (bool x) 
 	{
-		if (speed>=maxspeed) return;
-		if (accelerating) 
+		if (x!=accelerating) 
 		{
-			if (left!=last_pedal_left)
+			accelerating=x;
+			if (x) 
 			{
-				speed+=acceleration*Time.deltaTime;
-				time_to_stop=(maxspeed-speed)/maxspeed*2;
-				byke_sound_time=1;
-				byke_as.Play();
+				stopping=false;
 			}
-			else
-			{
-				accelerating=false;
-				time_to_stop=0;
-				propeller_sound_volume=0;
-				RpcPropellerSound(false);
-				byke_sound_time=0.3f;
-				byke_as.Play();
-			}
-			last_pedal_left=left;
+			RpcAccelerate(x);
 		}
-		else //start moving
+	}
+	[ClientRpc]
+	void RpcAccelerate (bool x) 
+	{
+			accelerating=x;
+			if (x) stopping=false;
+	}
+	[Command]
+	public void CmdDesselerate (bool x) 
+	{
+		if (x!=stopping) 
 		{
-			propeller_sound_volume=1;
-			RpcPropellerSound(true);
-			last_pedal_left=left;
-			accelerating=true;
-			speed+=acceleration*Time.deltaTime;
-			time_to_stop=(maxspeed-speed)/maxspeed*2;
-			byke_sound_time=1;
-			byke_as.Play();
+			stopping=x;
+			if (x) accelerating=false;
+			RpcDesselerate(x);
 		}
+	}
+	[ClientRpc]
+	void RpcDesselerate(bool x) 
+	{
+		stopping=x;
+		if (x) accelerating=false;
 	}
 	[ClientRpc]
 	void RpcPropellerSound(bool x) 
