@@ -11,9 +11,8 @@ public class playerController : NetworkBehaviour {
 	public float angle_acceleration=6;
 	public  float maxspeed=50;
 	public float propeller_sound_volume=0;
-	public int hp=100;
-
-	public bool accelerating=false;
+	public int maxhp=100;
+	public float hp;
 
 	public GameObject camera_pref;
 	public GameObject head;
@@ -21,6 +20,7 @@ public class playerController : NetworkBehaviour {
 	public GameObject flipper; //боковые плавники
 	public GameObject screw; //винт
 	public GameObject pedals;
+	public GameObject speedometer_str;
 	public GameObject scene_center;
 
 	public Renderer[] colored_parts;
@@ -28,10 +28,8 @@ public class playerController : NetworkBehaviour {
 	public Collider c2;
 
 	public Vector3 head_look_vector;
-	public Vector3 xrotate_vector;
-	public Vector3 yrotate_vector;
-	public Vector3 zrotate_vector;
 	public Vector3 realpos;
+
 	Quaternion realrot;
 	float last_sync_time;
 	Vector3 last_forward;
@@ -42,11 +40,11 @@ public class playerController : NetworkBehaviour {
 	AudioClip far_propeller_clip;
 	public AudioSource byke_as;
 
-	public bool stopping=false;
 	public bool start_with_autopilot=false;
 	bool painted=false;
 	bool propeller_far=false;
 	float byke_sound_time=0;
+	public sbyte speed_dir=0,xrot=0,yrot=0,zrot=0;
 
 	void Start () 
 	{
@@ -58,6 +56,7 @@ public class playerController : NetworkBehaviour {
 			c.transform.parent=transform;
 			c.transform.localPosition=new Vector3(0,-10,0);
 			c.transform.localRotation=Quaternion.Euler(Vector3.zero);
+			Global.cam=c.GetComponent<Camera>();
 			Global.effects_as=c.AddComponent<AudioSource>();
 			playerControllerGUI pcg=gameObject.AddComponent<playerControllerGUI>();
 			pcg.cam=c;
@@ -82,6 +81,7 @@ public class playerController : NetworkBehaviour {
 				AutoAssignment();
 			}
 		}
+		hp=maxhp;
 	}
 
 	void Update () 
@@ -95,22 +95,7 @@ public class playerController : NetworkBehaviour {
 				speed_bonus=1;
 			}
 		}
-		if (accelerating) 
-		{
-			if (speed+acceleration*Time.deltaTime<=maxspeed) 
-			{
-				speed+=acceleration*Time.deltaTime;
-			}
-			else accelerating=false;
-		}
-		else
-		{
-			if (stopping) 
-			{
-				if (speed-acceleration*Time.deltaTime>=0) speed-=acceleration/2*Time.deltaTime;
-				else {stopping=false;}
-			}
-		}
+
 		if (byke_sound_time>0) 
 		{
 			byke_sound_time-=Time.deltaTime;
@@ -120,9 +105,7 @@ public class playerController : NetworkBehaviour {
 			}
 			byke_as.volume=byke_sound_time;
 		}
-
 		propeller_sound_volume=speed/maxspeed;
-
 		if (propeller_sound_volume!=propeller_as.volume) 
 		{
 			if (propeller_sound_volume>propeller_as.volume) 
@@ -137,32 +120,33 @@ public class playerController : NetworkBehaviour {
 			}
 		}
 
-
+		if  (speed_dir!=0) speed+=speed_dir*acceleration*Time.deltaTime;
+		if (speed<0) speed=0; if (speed>maxspeed) speed=maxspeed;
 		if (speed!=0) 
 		{
-			if (yrotate_vector!=Vector3.zero) 
+			if (yrot!=0) 
 			{
-				transform.Rotate(yrotate_vector*Time.deltaTime*angle_acceleration,Space.Self);
+				transform.Rotate(yrot*Vector3.up*Time.deltaTime*angle_acceleration,Space.Self);
 			}
-			if (xrotate_vector!=Vector3.zero) 
+			if (xrot!=0) 
 			{
-				transform.Rotate(xrotate_vector*Time.deltaTime*angle_acceleration,Space.Self);
+				transform.Rotate(xrot*Vector3.right*Time.deltaTime*angle_acceleration,Space.Self);
 			}
-			if (zrotate_vector!=Vector3.zero) 
+			if (zrot!=0) 
 			{
-				transform.Rotate(zrotate_vector*Time.deltaTime*angle_acceleration,Space.Self);
+				transform.Rotate(zrot*Vector3.forward*Time.deltaTime*angle_acceleration,Space.Self);
 			}
 			screw.transform.Rotate(Vector3.forward*speed*Time.deltaTime*60,Space.Self);
 		}
 
-		fin.transform.localRotation=Quaternion.Euler(0,-15*yrotate_vector.y,0);
-		flipper.transform.localRotation=Quaternion.Euler(15*xrotate_vector.x,0,0);
+		fin.transform.localRotation=Quaternion.Euler(0,-15*yrot,0);
+		flipper.transform.localRotation=Quaternion.Euler(15*xrot,0,0);
 		if (!isServer)
 		{
 			if (1>2) {
 			Vector3 rpos=realpos;
 			Vector3 correction_vector=last_forward;
-			float y=yrotate_vector.y*angle_acceleration*(Time.time-last_sync_time);
+			float y=yrot*angle_acceleration*(Time.time-last_sync_time);
 			correction_vector.x=correction_vector.x*Mathf.Cos(y)-correction_vector.z*Mathf.Sin(y);
 			correction_vector.z=correction_vector.x*Mathf.Sin(y)+correction_vector.z*Mathf.Cos(y);
 			rpos=correction_vector.normalized*speed*(Time.time-last_sync_time);
@@ -224,6 +208,11 @@ public class playerController : NetworkBehaviour {
 		}
 	}
 
+
+	Vector3 GetStartPos (int x) 
+	{
+		return (Global.gmaster.start_pos+new Vector3(x%5*50-250,x/5*50+50,0));
+	}
 
 	void PaintMe (int x) 
 	{
@@ -295,13 +284,50 @@ public class playerController : NetworkBehaviour {
 		if (!isServer) return;
 		myNumber=Global.gmaster.GetNumber();
 		gameObject.name="player"+myNumber.ToString();
-		transform.position=Global.gmaster.start_pos+new Vector3(-200+myNumber*100,0,-100*(myNumber/4));
+		transform.position=GetStartPos(myNumber);
 		realpos=transform.position;
 		StartCoroutine(SyncCor());
 		c1.enabled=true;
 		c2.enabled=true;
+		Global.gmaster.players[myNumber]=gameObject;
 		RpcSetMyNumber(myNumber);
 		if (Global.multiplayer) PaintMe(myNumber);
+	}
+
+	public void ApplyDamage(float h) 
+	{
+		if (!isServer) return;
+		hp-=h;
+		if (hp<=0) 
+		{
+			RpcDestruction();
+		}
+	}
+
+	[ClientRpc]
+	void RpcDestruction() 
+	{
+		c1.enabled=false;
+		c2.enabled=false;
+		speed_dir=0;
+		xrot=0;
+		yrot=0;
+		zrot=0;
+		speed_bonus=1;
+		if (Global.gmaster.isLocalPlayer) Global.playable=false;
+		for (int i=0;i<transform.childCount;i++)
+		{
+			transform.GetChild(i).gameObject.SetActive(false);
+		}
+		Global.cam.gameObject.SetActive(true);
+		GameObject g = Instantiate(Resources.Load<GameObject>("falling_zeppelin"),transform.position,transform.rotation) as GameObject;
+		FallingZeppelin fz=g.GetComponent<FallingZeppelin>();
+		fz.speed=speed;
+		speed=0;
+		foreach (Renderer r in fz.rrs) 
+		{
+			r.material=colored_parts[0].material;
+		}
 	}
 
 	[Command]
@@ -310,11 +336,13 @@ public class playerController : NetworkBehaviour {
 		myNumber=Global.gmaster.GetNumber();
 		gameObject.name="player"+myNumber.ToString();
 		if (isLocalPlayer) Global.gmaster.local_player_number=myNumber;
-		transform.position=Global.gmaster.start_pos+new Vector3(-200+myNumber*100,0,-100*(myNumber/4));
+		transform.position=GetStartPos(myNumber);
 		realpos=transform.position;
 		StartCoroutine(SyncCor());
 		c1.enabled=true;
 		c2.enabled=true;
+		Global.gmaster.local_player_number=myNumber;
+		Global.gmaster.players[myNumber]=gameObject;
 		RpcSetMyNumber(myNumber);
 		if (Global.multiplayer) PaintMe(myNumber);
 	}
@@ -323,6 +351,7 @@ public class playerController : NetworkBehaviour {
 	{
 		if (isServer) return;
 		myNumber=x;
+		Global.gmaster.players[myNumber]=gameObject;
 		if (isLocalPlayer) Global.gmaster.local_player_number=x;
 		transform.position=Global.gmaster.start_pos+new Vector3(-200+x*100,0,-100*(x/4));
 		c1.enabled=true;
@@ -332,40 +361,20 @@ public class playerController : NetworkBehaviour {
 	}
 
 	[Command]
-	public void CmdAccelerate (bool x) 
+	public void CmdSpeedVector (sbyte x)
 	{
-		if (x!=accelerating) 
+		if (speed_dir!=x) 
 		{
-			accelerating=x;
-			if (x) 
-			{
-				stopping=false;
-			}
-			RpcAccelerate(x);
+			speed_dir=x;
+			RpcSpeedVector(x);
 		}
 	}
 	[ClientRpc]
-	void RpcAccelerate (bool x) 
+	void RpcSpeedVector (sbyte x) 
 	{
-			accelerating=x;
-			if (x) stopping=false;
+		speed_dir=x;
 	}
-	[Command]
-	public void CmdDesselerate (bool x) 
-	{
-		if (x!=stopping) 
-		{
-			stopping=x;
-			if (x) accelerating=false;
-			RpcDesselerate(x);
-		}
-	}
-	[ClientRpc]
-	void RpcDesselerate(bool x) 
-	{
-		stopping=x;
-		if (x) accelerating=false;
-	}
+
 	[ClientRpc]
 	void RpcPropellerSound(bool x) 
 	{
@@ -387,84 +396,63 @@ public class playerController : NetworkBehaviour {
 	}
 
 	[Command]
-	public void CmdXRotateVector (byte x)
+	public void CmdXRotateVector (sbyte x)
 	{
-		switch (x) 
+		if (x!=xrot)
 		{
-		case 0: xrotate_vector=Vector3.zero;break;
-		case 1: xrotate_vector=Vector3.left;break;
-		case 2: xrotate_vector=Vector3.right;break;
+			xrot=x;
+			if (Global.multiplayer )RpcXRotateVector(x);
 		}
-		if (Global.multiplayer )RpcXRotateVector(x);
 	}
 	[ClientRpc]
-	void RpcXRotateVector (byte x)
+	void RpcXRotateVector (sbyte x)
 	{
 		if (isServer) return;
-		switch (x) 
-		{
-		case 0: xrotate_vector=Vector3.zero;break;
-		case 1: xrotate_vector=Vector3.left;break;
-		case 2: xrotate_vector=Vector3.right;break;
-		}
+		xrot=x;
 	}
 	[Command]
-	public void CmdYRotateVector (byte x)
+	public void CmdYRotateVector (sbyte y)
 	{
-		switch (x) 
+		if (y!=yrot)
 		{
-		case 0: yrotate_vector=Vector3.zero;break;
-		case 1: yrotate_vector=Vector3.up;break;
-		case 2: yrotate_vector=Vector3.down;break;
+			yrot=y;
+			if (Global.multiplayer ) RpcYRotateVector(y);
 		}
-		if (Global.multiplayer ) RpcYRotateVector(x);
 	}
 	[ClientRpc]
-	void RpcYRotateVector (byte x)
+	void RpcYRotateVector (sbyte y)
 	{
 		if (isServer) return;
-		switch (x) 
-		{
-		case 0: yrotate_vector=Vector3.zero;break;
-		case 1: yrotate_vector=Vector3.up;break;
-		case 2: yrotate_vector=Vector3.down;break;
-		}
+		yrot=y;
 	}
 	[Command]
-	public void CmdZRotateVector (byte x)
+	public void CmdZRotateVector (sbyte z)
 	{
-		switch (x) 
+		if (z!=zrot)
 		{
-		case 0: zrotate_vector=Vector3.zero;break;
-		case 1: zrotate_vector=Vector3.back;break;
-		case 2: zrotate_vector=Vector3.forward;break;
+			zrot=z;
+			if (Global.multiplayer ) RpcYRotateVector(z);
 		}
-		if (Global.multiplayer ) RpcYRotateVector(x);
 	}
 
 	[ClientRpc]
-	void RpcZRotateVector (byte x)
+	void RpcZRotateVector (sbyte z)
 	{
 		if (isServer) return;
-		switch (x) 
-		{
-		case 0: zrotate_vector=Vector3.zero;break;
-		case 1: zrotate_vector=Vector3.back;break;
-		case 2: zrotate_vector=Vector3.forward;break;
-		}
+		zrot=z;
 	}
 
 	[Command]
 	void CmdFinish (int x) 
 	{
-		stopping=true;
+		speed_dir=-1;
 		RpcFinish(x);
 	}
 	[ClientRpc]
 	void RpcFinish(int x)
 	{
 		if (isServer) return;
-		stopping=true;
+		speed_dir=-1;
 		if (isLocalPlayer) 
 		{
 			Global.playable=false;

@@ -71,77 +71,78 @@ public class playerControllerGUI : MonoBehaviour {
 		if (!Global.playable) return;
 		if (Input.GetKeyDown(KeyCode.UpArrow)) 
 		{
-			pc.CmdAccelerate(true);
+			pc.CmdSpeedVector(1);
 		}
 		else 
 		{
 			if (Input.GetKeyDown(KeyCode.DownArrow)) 
 			{
-				pc.CmdDesselerate(true);
+				pc.CmdSpeedVector(-1);
 			}
 			else 
 			{
-				if (Input.GetKeyUp(KeyCode.UpArrow)) pc.CmdAccelerate(false);
-				if (Input.GetKeyUp(KeyCode.DownArrow)) pc.CmdDesselerate(false);
+				if (pc.speed_dir==1&&Input.GetKeyUp(KeyCode.UpArrow)||pc.speed_dir==-1&&Input.GetKeyUp(KeyCode.DownArrow)) pc.CmdSpeedVector(0);
 			}
 		}
 
-		if (pc.yrotate_vector==Vector3.zero)
+		if (pc.yrot==0)
 		{
 			if (Input.GetKeyDown("d")) 
 			{
-				if (pc.yrotate_vector!=Vector3.up) pc.CmdYRotateVector((byte)(1));
+				pc.CmdYRotateVector(1);
 			}
 			else
 			{
 				if (Input.GetKeyDown("a")) 
 				{
-					if (pc.yrotate_vector!=Vector3.down) pc.CmdYRotateVector((byte)(2));
+					pc.CmdYRotateVector(-1);
 				}
 			}
 		}
 		else //уже вращается
 		{
-			if ((pc.yrotate_vector==Vector3.up&&Input.GetKeyUp("d"))||(pc.yrotate_vector==Vector3.down&&Input.GetKeyUp("a"))) pc.CmdYRotateVector(0);
+			if ((pc.yrot==1&&Input.GetKeyUp("d"))||(pc.yrot==-1&&Input.GetKeyUp("a"))) pc.CmdYRotateVector(0);
 		}
-		// Y AXIS
-		if (pc.xrotate_vector==Vector3.zero)
+		// X AXIS
+		if (pc.xrot==0)
 		{
 			if (Input.GetKeyDown("w")) 
 			{
-				if (pc.xrotate_vector!=Vector3.left) pc.CmdXRotateVector((byte)(1));
+				pc.CmdXRotateVector(-1);
 			}
 			else
 			{
 				if (Input.GetKeyDown("s")) 
 				{
-					if (pc.xrotate_vector!=Vector3.right) pc.CmdXRotateVector((byte)(2));
+					pc.CmdXRotateVector(1);
 				}
 			}
 		}
 		else //уже вращается
 		{
-			if ((pc.xrotate_vector==Vector3.left&&Input.GetKeyUp("w"))||(pc.xrotate_vector==Vector3.right&&Input.GetKeyUp("s"))) pc.CmdXRotateVector(0);
+			if ((pc.xrot==-1&&Input.GetKeyUp("w"))||(pc.xrot==1&&Input.GetKeyUp("s"))) pc.CmdXRotateVector(0);
 		}
 		// Z AXIS
-		if (pc.zrotate_vector==Vector3.zero)
+		if (pc.zrot==0)
 		{
 			if (Input.GetKeyDown("q")) 
 			{
-				if (pc.zrotate_vector!=Vector3.back) pc.CmdZRotateVector((byte)(1));
+				pc.CmdZRotateVector(1);
 			}
 			else
 			{
 				if (Input.GetKeyDown("e")) 
 				{
-					if (pc.zrotate_vector!=Vector3.forward) pc.CmdZRotateVector((byte)(2));
+					pc.CmdZRotateVector(-1);
 				}
 			}
 		}
 		else //уже вращается
 		{
-			if ((pc.zrotate_vector==Vector3.back&&Input.GetKeyUp("q"))||(pc.zrotate_vector==Vector3.forward&&Input.GetKeyUp("e"))) pc.CmdZRotateVector(0);
+			if ((pc.zrot==1&&Input.GetKeyUp("q"))||(pc.zrot==-1&&Input.GetKeyUp("e"))) pc.CmdZRotateVector(0);
 		}
+
+		pc.speedometer_str.transform.localRotation=Quaternion.Euler(0,0,90-pc.speed/pc.maxspeed*180);
 	}
 
 
@@ -179,12 +180,6 @@ public class playerControllerGUI : MonoBehaviour {
 			}
 			else 
 			{
-				Rect r=speedline_rect;
-				float f=pc.speed/pc.maxspeed;
-				if (f>1) f=1;
-				if (f<0) f=0;
-				GUI.DrawTexture(new Rect(r.x,r.y,f*r.width,r.height),hor_blue_line);
-				GUI.DrawTexture(speedline_rect,hor_line_frame);
 				if (collided) GUI.DrawTexture(allscreen_rect,red_screen);
 			}
 		}

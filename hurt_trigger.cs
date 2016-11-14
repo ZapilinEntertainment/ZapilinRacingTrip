@@ -8,8 +8,7 @@ public class hurt_trigger : MonoBehaviour {
 	void OnTriggerEnter (Collider c) 
 	{
 		if (!Global.onServer) return;
-
-		if (explosive) 
+		if (explosive&&1>2) 
 		{
 			Collider[] cdr=Physics.OverlapSphere(transform.position,transform.localScale.x*2);
 			foreach (Collider cd in cdr) 
@@ -20,5 +19,10 @@ public class hurt_trigger : MonoBehaviour {
 				}
 			}
 		}
+		else 
+		{
+			c.transform.root.SendMessage("ApplyDamage",damage,SendMessageOptions.DontRequireReceiver);
+		}
 	}
+
 }

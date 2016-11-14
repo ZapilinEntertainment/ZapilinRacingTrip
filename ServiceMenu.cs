@@ -18,6 +18,7 @@ public class ServiceMenu : MonoBehaviour {
 	{
 		if (GUI.Button(exit_button_rect,"Exit")) 
 		{
+			Global.playable=false;
 			Global.gmaster.MakeDisconnect();
 		}
 	}
